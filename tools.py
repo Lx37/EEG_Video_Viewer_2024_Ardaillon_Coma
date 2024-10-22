@@ -2,6 +2,8 @@ import os
 import neo
 import numpy as np
 import scipy as sc
+import ephyviewer
+import pandas as pd
 
 
 def read_EEG_syncro_trig(eeg_trc_file):
@@ -32,6 +34,7 @@ def read_EEG_syncro_trig(eeg_trc_file):
 
 
 def get_data_to_EEG_regression_coef(trig_other_times, trig_micromed_times):
+    
     print('trigs volcan : ', np.shape(trig_other_times)[0], ' trig micromed : ', np.shape(trig_micromed_times)[0]) 
     assert np.shape(trig_other_times)[0] == np.shape(trig_micromed_times)[0], 'Not the same number of syncro trigs'
     a,b,r,tt,stderr = sc.stats.linregress(trig_other_times, trig_micromed_times)
@@ -47,7 +50,7 @@ def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
     # Read video times from .tps file
     video_times = np.fromfile(video_tps_file, dtype= np.uint32)/1000.  # need .astype(np.float64) ?
     video_times -= video_times[0]
-    print('video_times from video recording : ', video_times)
+    print('video_times from video recording : ', video_times[0])
     print('shape video_times : ', np.shape(video_times))
     
     # Read synchro trig clock from .clock  
@@ -71,15 +74,47 @@ def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
     #data_s*pow(10,9) ?
     #rescaled_video_time + record_time ?*
     
-    print('Rescaled_video_time  : ', rescaled_video_time)
+    print('Rescaled_video_time  : ', rescaled_video_time[0])
     print('shape rescaled_video_time : ', np.shape(rescaled_video_time))
-    #print('shape video_times : ', np.shape(video_times))
     
-    diff_rescaled_notrescaled = rescaled_video_time - video_times
-    print('diff_rescaled_notrescaled : ', diff_rescaled_notrescaled)
+    #diff_rescaled_notrescaled = rescaled_video_time - video_times
+    #print('diff_rescaled_notrescaled : ', diff_rescaled_notrescaled)
     
     return rescaled_video_time
 
+    
+    
+def get_env_data(env_h5_file):
+    
+    #list keys
+    #with pd.HDFStore(data_path) as hdf:
+    #    print(hdf.keys())
+    
+    lux_signal = pd.read_hdf(env_h5_file,  key='/lux')
+    sono_signal = pd.read_hdf(env_h5_file,  key='/sono')
+    
+    #assert(lux_signal.index.all() == sono_signal.index.all())
+    
+    print('np.shape(lux_signal.to_numpy()) : ',  np.shape(lux_signal.to_numpy()))
+
+    sigs = np.stack((lux_signal.to_numpy(), sono_signal.to_numpy()), axis=1)
+    print('np.shape(sigs) : ',  np.shape(sigs))
+    channel_names = ['Lux' , 'Sono'] #{0: Lux, 1: peaks1}
+    
+    mean_diff = abs(np.diff(lux_signal.index)).mean()
+    sample_rate = 1 / (mean_diff.item() * 10**(-9))
+   
+    t_start = pd.to_datetime(lux_signal.index[0])#/ 10**9#.item() # * 10**(-9)
+    #print('t_start : ', t_start)
+    #print('t_start type : ', type(t_start))
+
+    #env_sources = ephyviewer.InMemoryAnalogSignalSource(signals, sample_rate, t_start)
+    
+    return sigs, sample_rate, t_start, channel_names
+    
+    
+    
+    
     
     
 # Test methods
@@ -94,8 +129,6 @@ def test_rescale_video_times():
     
     rescaled_video_time = rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file)
     
-   
-
 
     
     
