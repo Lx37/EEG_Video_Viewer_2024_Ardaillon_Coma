@@ -9,7 +9,7 @@ import datetime
 import platform
 #import pandas as pd
 
-from tools import rescale_video_times, get_env_data
+from tools import rescale_video_times, get_env_rawData #get_env_H5Data
 
 print('Working on computer : ', platform.uname().node)
 
@@ -37,7 +37,10 @@ video_clock_file = "{}/{}/{}.clock".format(data_raw_path, patient_name, patient_
 rescaled_video_time = rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file)
 
 # Get sono and lux from data node (already rescaled)
-env_h5_file =  "{}/{}/{}_Env.h5".format(data_node_path, patient_name, patient_name) 
+#env_h5_file =  "{}/{}/{}_Env.h5".format(data_node_path, patient_name, patient_name) 
+
+# Get sono and lux from raw data (volcan)
+raw_file =  "{}/{}/{}.raw".format(data_raw_path, patient_name, patient_name)
 
 #video_times = np.fromfile(video_tps_file, dtype= np.uint32)/1000.
 #video_times -= video_times[0]
@@ -53,8 +56,6 @@ env_h5_file =  "{}/{}/{}_Env.h5".format(data_node_path, patient_name, patient_na
 #video_times -= video_times[0]
 #print('video_times from video recording : ', video_times)
 #print('shape video_times : ', np.shape(video_times))
-
-
 
 #neo_seg = neo.MicromedIO(filename = eeg_trc_file).read_segment()
 # print(neo_seg.analogsignals)
@@ -81,39 +82,40 @@ win = MainViewer(datetime0 = datetime0, show_label_datetime=True)
 # EEG viewer
 mainviewer = compose_mainviewer_from_sources(sources, mainviewer=win) #TODO rewrite it better
 
-# Video viewer rescaled_video_time
-#video_source = video.MultiVideoFileSource([video_avi_file], [video_times]) #TODO rescale video_times to EEG
-video_source = video.MultiVideoFileSource([video_avi_file], [rescaled_video_time]) 
-video_view = VideoViewer(source=video_source, name='video')
-win.add_view(video_view)
 
 # Environement viewer (sono + lux)
-env_sigs, env_sample_rate, env_t_start, channel_names = get_env_data(env_h5_file)
+#env_sigs, env_sample_rate, env_t_start, channel_names = get_env_H5Data(env_h5_file)
+env_sigs, env_sample_rate, env_t_start, channel_names, corrected_raw_idx = get_env_rawData(raw_file, eeg_trc_file)
 
+#print(type(env_sigs[0]))
+#print('datetime0 : ', datetime0)
+#print('type(datetime0) : ', type(datetime0))
+#print('env_t_start : ', env_t_start)
+#print('type(env_t_start) : ', type(env_t_start))
 
-print(type(env_sigs[0]))
-print('datetime0 : ', datetime0)
-print('type(datetime0) : ', type(datetime0))
-print('env_t_start : ', env_t_start)
-print('type(env_t_start) : ', type(env_t_start))
-
-rescaled_t_start = (env_t_start - datetime0).total_seconds()
-print('rescaled_t_start : ', rescaled_t_start)
-print('type rescaled_t_start : ', type(rescaled_t_start))
+#rescaled_t_start = (env_t_start - datetime0).total_seconds()
+#print('rescaled_t_start : ', rescaled_t_start)
+#print('type rescaled_t_start : ', type(rescaled_t_start))
+rescaled_t_start = env_t_start
 
 #sono_view = TraceViewer(source=env_sources, name='environment')
 sono_view = TraceViewer.from_numpy(env_sigs, env_sample_rate, rescaled_t_start, 'Environment', channel_names)
 mainviewer.add_view(sono_view)
 
-# Epoch encoder
-# lets encode some dev mood along the day
-'''
+# Video viewer rescaled_video_time
+test_rescaled_video_time = rescaled_video_time - rescaled_video_time[0] + env_t_start
+#video_source = video.MultiVideoFileSource([video_avi_file], [video_times]) #TODO rescale video_times to EEG
+video_source = video.MultiVideoFileSource([video_avi_file], [test_rescaled_video_time])# [rescaled_video_time]) 
+video_view = VideoViewer(source=video_source, name='video')
+win.add_view(video_view)
+
+# Epoch encoder lets encode some dev mood along the day
 possible_labels = ['euphoric', 'nervous', 'hungry',  'triumphant']
 filename = 'example_dev_mood_encoder.csv'
 source_epoch = CsvEpochSource(filename, possible_labels)
 encoder_view = EpochEncoder(source=source_epoch, name='Encoder')
 win.add_view(encoder_view)
-'''
+
 
 
 #Run
