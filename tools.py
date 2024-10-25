@@ -6,6 +6,7 @@ import ephyviewer
 import pandas as pd
 import datetime
 import matplotlib.pyplot as plt
+print('hello')
 
 def read_EEG_syncro_trig(eeg_trc_file):
     seg = neo.MicromedIO(filename = eeg_trc_file).read_segment()
