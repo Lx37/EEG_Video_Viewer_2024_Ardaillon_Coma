@@ -46,21 +46,21 @@ def get_data_to_EEG_regression_coef(trig_other_times, trig_micromed_times):
 
 def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
     
+    print('******* Load Video data')
+    
     # Read video times from .tps file
     video_times = np.fromfile(video_tps_file, dtype= np.uint32).astype(np.float64)/1000.  # need .astype(np.float64) ?
     t0_machine = video_times[0] #TODO add description
     video_times -= t0_machine
-    print('t0_machine : ', t0_machine)
-    print('video_times[1] ', video_times[1])
-    print('shape video_times : ', np.shape(video_times))
+    #print('t0_machine : ', t0_machine)
+    #print('video_times[1] ', video_times[1])
+    #print('shape video_times : ', np.shape(video_times))
     
     # Read synchro trig clock from .clock  
     trig_video_times = np.fromfile(video_clock_file, dtype = np.uint32).astype(np.float64)/1000.
-    print('ICI  video_clock_file data[0]: ', trig_video_times[0])
-    trig_video_times -= t0_machine #trig_video_times[0]
-    #print('trig_video_times from video clock file : ', trig_video_times)
-    #print('shape trig_video_times : ', np.shape(trig_video_times))
-    
+    #print('ICI  video_clock_file data[0]: ', trig_video_times[0])
+    trig_video_times -= t0_machine  # Remove the T0 from .tps file to the .clock data ! this is the T0_machine
+  
     # Get coefficent to project video time to EEG time space
     trig_micromed_times = read_EEG_syncro_trig(eeg_trc_file)
     
@@ -73,14 +73,8 @@ def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
     a, b = get_data_to_EEG_regression_coef(trig_video_times, trig_micromed_times)
     rescaled_video_time = video_times* a + b
     
-    #data_s*pow(10,9) ?
-    #rescaled_video_time + record_time ?*
-    
-    print('Rescaled_video_time  : ', rescaled_video_time[0])
-    print('shape rescaled_video_time : ', np.shape(rescaled_video_time))
-    
-    #diff_rescaled_notrescaled = rescaled_video_time - video_times
-    #print('diff_rescaled_notrescaled : ', diff_rescaled_notrescaled)
+    #print('Rescaled_video_time  : ', rescaled_video_time[0])
+    #print('shape rescaled_video_time : ', np.shape(rescaled_video_time))
     
     return rescaled_video_time  
     
@@ -146,6 +140,9 @@ def read_volcan_signal(raw_filename, output = 'neo2'):
         return anasigs
 
 def get_env_rawData(raw_file, eeg_trc_file):
+    
+    print('******* Load raw data')
+    
     header, raw = read_volcan_signal(raw_file,output='numpy')
     
     raw_freq = header['frequence']
@@ -163,7 +160,6 @@ def get_env_rawData(raw_file, eeg_trc_file):
     print (len(trig_micromed_times))
 
     patient_name = eeg_trc_file.split('/')[-1][0:3]
-    print('patient_name : ', patient_name)
     if patient_name in ['P03', 'P07', 'P09', 'P10', 'P11bis', 'P12', 'P15', 'P16']:
         trig_micromed_times = trig_micromed_times[:-1]
         print ("Last Micromed trig removed because not received from volcan side !")
@@ -180,8 +176,7 @@ def get_env_rawData(raw_file, eeg_trc_file):
     '''
     channel_names = ['Sono' , 'Lux', 'Synchro']
     t_start =  corrected_raw_idx[0]
-    print('t_start env data : ', t_start)
-
+   
     #return raw[:,0:2], raw_freq, t_start, channel_names, corrected_raw_idx
     return raw, raw_freq, t_start, channel_names, corrected_raw_idx
        
