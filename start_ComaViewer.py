@@ -16,7 +16,10 @@ print('Working on computer : ', platform.uname().node)
 if platform.uname().node == 'tkz-XPS': #'tkz-XPS' pc portable Alex
     data_raw_path = '/home/tkz/Projets/data/data_Florent_Hugo_2024/raw/'
     data_node_path = '/home/tkz/Projets/data/data_Florent_Hugo_2024/data_node/'
-#TODO get platform.uname().node for Hugo
+#si chez Hugo ou ailleurs :
+else:
+    data_raw_path = '/Users/arda/Desktop/Python/coma_ardaillon_raw/'
+    #data_node_path = '/home/tkz/Projets/data/data_Florent_Hugo_2024/data_node/'
 
 patient_name = 'P03'
 print('Working on patient : ', patient_name)
