@@ -5,6 +5,7 @@ import scipy as sc
 import ephyviewer
 import pandas as pd
 import datetime
+import matplotlib.pyplot as plt
 
 def read_EEG_syncro_trig(eeg_trc_file):
     seg = neo.MicromedIO(filename = eeg_trc_file).read_segment()
@@ -47,13 +48,16 @@ def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
     
     # Read video times from .tps file
     video_times = np.fromfile(video_tps_file, dtype= np.uint32).astype(np.float64)/1000.  # need .astype(np.float64) ?
-    video_times -= video_times[0]
-    print('video_times from video recording : ', video_times[0])
+    t0_machine = video_times[0] #TODO add description
+    video_times -= t0_machine
+    print('t0_machine : ', t0_machine)
+    print('video_times[1] ', video_times[1])
     print('shape video_times : ', np.shape(video_times))
     
     # Read synchro trig clock from .clock  
     trig_video_times = np.fromfile(video_clock_file, dtype = np.uint32).astype(np.float64)/1000.
-    trig_video_times -= trig_video_times[0]
+    print('ICI  video_clock_file data[0]: ', trig_video_times[0])
+    trig_video_times -= t0_machine #trig_video_times[0]
     #print('trig_video_times from video clock file : ', trig_video_times)
     #print('shape trig_video_times : ', np.shape(trig_video_times))
     
@@ -78,9 +82,7 @@ def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
     #diff_rescaled_notrescaled = rescaled_video_time - video_times
     #print('diff_rescaled_notrescaled : ', diff_rescaled_notrescaled)
     
-    return rescaled_video_time
-
-    
+    return rescaled_video_time  
     
 def get_env_H5Data(env_h5_file):
     
@@ -109,8 +111,7 @@ def get_env_H5Data(env_h5_file):
     #env_sources = ephyviewer.InMemoryAnalogSignalSource(signals, sample_rate, t_start)
     
     return sigs, sample_rate, t_start, channel_names
-    
-    
+        
 def read_header(header_filename):
     #~ print header_filename
     d = { }
@@ -171,19 +172,113 @@ def get_env_rawData(raw_file, eeg_trc_file):
     print(a,b)
 
     corrected_raw_idx = raw_idx * a + b
-
+    raw_freq /= a
     '''
     offset_raw_idx = sync_data_to_EEG_datetime(corrected_raw_idx, output_dirname, patient_name)
     sono_df = pd.Series(data=raw[:,0], index=offset_raw_idx)
     lux_df = pd.Series(data=raw[:,1], index=offset_raw_idx)
     '''
-    channel_names = ['Sono' , 'Lux']
+    channel_names = ['Sono' , 'Lux', 'Synchro']
     t_start =  corrected_raw_idx[0]
     print('t_start env data : ', t_start)
 
-    return raw[:,0:2], raw_freq, t_start, channel_names, corrected_raw_idx
+    #return raw[:,0:2], raw_freq, t_start, channel_names, corrected_raw_idx
+    return raw, raw_freq, t_start, channel_names, corrected_raw_idx
+       
+def read_volcan_epoch(fac_filename, facdef_filename, output='list'):
+    """
+    : param output: "dict" or "neo2"
+    Attention 0=non coded
+    """
+    print("fac_filename : ", fac_filename)
+    fid = open(facdef_filename,  encoding= "ISO-8859-1")
+    line = fid.readline()
+    epocharrays = [ ]
+    while line !='':
+        epocharray = { }
+        epocharray['name'], n = line.replace('\'n', '').replace('\r', '').split(' ')
+        epocharray['possible_labels'] = { }
+        for i in range(int(n)):
+            line = fid.readline().replace('\'n', '').replace('\r', '')
+            code, num, key = line.split(' ')
+            epocharray['possible_labels'][int(num)] = code
+        epocharrays.append(epocharray)
+        line = fid.readline()
+
+    images = np.fromfile(fac_filename, dtype = np.float64).reshape(len(epocharrays)+1,-1)
     
+    for i, epocharray in enumerate(epocharrays):
+        epocharray['image_times'] = images[0,:]
+        epocharray['image_codes'] = images[1,:]
+        
+        # regroup image_labels in epoch with times+duration 
+        fronts, = np.where( np.diff(epocharray['image_codes']) != 0 )
+        fronts = np.concatenate([[0], fronts+1, [len(epocharray['image_codes']) - 1], ])
+        epocharray['epoch_times'] = []
+        epocharray['epoch_durations'] = []
+        epocharray['epoch_labels'] = []
+        #epocharray['epoch_code'] = []
+        for e in range(fronts.size - 1) :
+            k = epocharray['image_codes'][fronts[e]]
+            if k in epocharray['possible_labels'].keys() :
+                t_start = epocharray['image_times'][fronts[e]]
+                t_stop = epocharray['image_times'][fronts[e+1]]
+                epocharray['epoch_times' ].append(t_start)
+                epocharray['epoch_durations' ].append(t_stop-t_start)
+                epocharray['epoch_labels' ].append(epocharray['possible_labels'][k])
+                #epocharray['epoch_code' ].append(int(k))
     
+    if output == 'list':
+        return epocharrays
+    elif output == 'neo2' and has_neo:
+        neo_eps = [ ]
+        for ep in epocharrays:
+            neo_ep = neo.EpochArray(name = epocharray['name'],
+                                    times = epocharray['epoch_times' ]*pq.s,
+                                    durations = epocharray['epoch_durations' ]*pq.s,
+                                    labels = np.array(epocharray['epoch_labels' ], dtype = str),
+                                    )
+            neo_eps.append(neo_ep)
+        return neo_eps
+  
+def get_scores_volcan(fac_filename, facdef_filename):
+    
+    epocharrays = read_volcan_epoch(fac_filename, facdef_filename, output='list')
+    print(epocharrays)
+    
+def get_scores_volcan_h5(h5_scoreVolcan):
+    
+    with pd.HDFStore(h5_scoreVolcan) as hdf:
+        print(hdf.keys())
+    
+    data_yeux = pd.read_hdf(h5_scoreVolcan,  key='/Yeux')
+    print(data_yeux)
+    data_yeux_np = data_yeux.to_numpy()
+    print(data_yeux_np)
+    
+    data_motricite = pd.read_hdf(h5_scoreVolcan,  key='/Motricite')
+    print(data_motricite)
+    data_yeux_datetime = data_yeux.index
+    print(data_motricite.index)
+    data_motricite_np = data_motricite.to_numpy()
+    print(data_motricite_np)
+    
+    mean_diff = abs(np.diff(data_yeux.index)).mean() # same datetime for both Yeux and Motricite
+    sample_rate = 1 / (mean_diff.item() * 10**(-9))
+    
+    print('mean diff : ', mean_diff)
+    print('mean diff.item() : ', mean_diff.item()) 
+    print('mean diff.item() *10-9 : ', mean_diff.item() * 10**(-9))
+    plt.plot(np.diff(data_yeux.index))
+    
+    date_start = data_yeux.index
+    
+    #data_yeux.plot()
+    plt.show()
+    
+    return data_yeux_np, data_motricite_np, sample_rate, date_start
+
+
     
 # Test methods
 
@@ -195,7 +290,17 @@ def test_rescale_video_times(patient_name):
     eeg_trc_file = data_raw_path + patient_name + '/' + patient_name + '_EEG_24h.TRC'
     
     rescaled_video_time = rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file)
+
+def test_get_env_H5Data(patient_name):
     
+    data_folder_path = '/home/tkz/Projets/data/data_Florent_Hugo_2024/data_node'
+    env_h5_file =  "{}/{}/{}_Env.h5".format(data_folder_path, patient_name, patient_name) 
+
+    sigs, sample_rate, t_start, channel_names = get_env_H5Data(env_h5_file)
+    
+    print('sample_rate : ', sample_rate)
+    print('t_start : , ', t_start)
+   
 def test_get_env_rawData(patient_name):
     
     data_raw_path = '/home/tkz/Projets/data/data_Florent_Hugo_2024/raw/'
@@ -230,6 +335,25 @@ def show_starts_timmings(patient_name):
     print('Video start : ', EEG_rec_datetime + time_delta_video)
     print('time_delta_video : ', time_delta_video)
     
+def test_get_scores_volcan(patient_name):
+    
+    data_raw_path = '/home/tkz/Projets/data/data_Florent_Hugo_2024/raw/'
+    video_tps_file = "{}/{}/{}_V=1.tps".format(data_raw_path, patient_name, patient_name)
+    fac_filename = "{}/{}/{}_V=1.fac".format(data_raw_path, patient_name, patient_name)
+    facdef_filename = "{}/{}/{}_V=1.facdef".format(data_raw_path, patient_name, patient_name)
+    
+    get_scores_volcan(fac_filename, facdef_filename)
+    
+def test_get_scores_volcan_h5(patient_name):
+    
+    data_folder_path = '/home/tkz/Projets/data/data_Florent_Hugo_2024/data_node'
+    h5_scoreVolcan = "{}/{}/{}_ScoreVolcan.h5".format(data_folder_path, patient_name, patient_name)
+    data_yeux_np, data_motricite_np, sample_rate, date_start = get_scores_volcan_h5(h5_scoreVolcan)
+    
+    print('sample_rate : ', sample_rate)
+    print('date_start : ', date_start)
+    print('date_start : ', date_start)
+    
     
 if __name__ == "__main__":
 
@@ -239,3 +363,12 @@ if __name__ == "__main__":
     #test_get_env_rawData(patient_name)
     
     show_starts_timmings(patient_name)
+   
+    #test_get_scores_volcan(patient_name)
+    
+    
+    
+    #From data node (trying no using it - but to compare)
+    #test_get_scores_volcan_h5(patient_name)
+    #test_get_env_H5Data(patient_name)
+    

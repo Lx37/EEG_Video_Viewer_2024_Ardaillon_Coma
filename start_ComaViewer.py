@@ -1,6 +1,6 @@
 
 import neo
-from ephyviewer import mkQApp, MainViewer, TraceViewer, get_sources_from_neo_rawio
+from ephyviewer import mkQApp, MainViewer, TraceViewer, get_sources_from_neo_rawio, EpochViewer
 from ephyviewer import EpochEncoder, compose_mainviewer_from_sources, VideoViewer, CsvEpochSource
 from ephyviewer.tests.testing_tools import make_fake_video_source
 from ephyviewer import video
@@ -9,7 +9,7 @@ import datetime
 import platform
 #import pandas as pd
 
-from tools import rescale_video_times, get_env_rawData #get_env_H5Data
+from tools import rescale_video_times, get_env_rawData, read_volcan_epoch #get_env_H5Data
 
 print('Working on computer : ', platform.uname().node)
 
@@ -33,6 +33,9 @@ eeg_trc_file = "{}/{}/{}_EEG_24h.TRC".format(data_raw_path, patient_name, patien
 video_avi_file = "{}/{}/{}_V=1.avi".format(data_raw_path, patient_name, patient_name)
 video_tps_file = "{}/{}/{}_V=1.tps".format(data_raw_path, patient_name, patient_name)
 video_clock_file = "{}/{}/{}.clock".format(data_raw_path, patient_name, patient_name)
+fac_filename = "{}/{}/{}_V=1.fac".format(data_raw_path, patient_name, patient_name)
+facdef_filename = "{}/{}/{}_V=1.facdef".format(data_raw_path, patient_name, patient_name)
+    
 
 rescaled_video_time = rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file)
 
@@ -82,7 +85,6 @@ win = MainViewer(datetime0 = datetime0, show_label_datetime=True)
 # EEG viewer
 mainviewer = compose_mainviewer_from_sources(sources, mainviewer=win) #TODO rewrite it better
 
-
 # Environement viewer (sono + lux)
 #env_sigs, env_sample_rate, env_t_start, channel_names = get_env_H5Data(env_h5_file)
 env_sigs, env_sample_rate, env_t_start, channel_names, corrected_raw_idx = get_env_rawData(raw_file, eeg_trc_file)
@@ -103,11 +105,21 @@ sono_view = TraceViewer.from_numpy(env_sigs, env_sample_rate, rescaled_t_start, 
 mainviewer.add_view(sono_view)
 
 # Video viewer rescaled_video_time
-test_rescaled_video_time = rescaled_video_time - rescaled_video_time[0] + env_t_start
+#test_rescaled_video_time = rescaled_video_time - rescaled_video_time[0] + env_t_start
 #video_source = video.MultiVideoFileSource([video_avi_file], [video_times]) #TODO rescale video_times to EEG
-video_source = video.MultiVideoFileSource([video_avi_file], [test_rescaled_video_time])# [rescaled_video_time]) 
+video_source = video.MultiVideoFileSource([video_avi_file], [rescaled_video_time])# [rescaled_video_time]) 
 video_view = VideoViewer(source=video_source, name='video')
 win.add_view(video_view)
+
+# Epoch viewer for Florent scores #TODO ALEX
+'''
+source_ep = read_volcan_epoch(fac_filename, facdef_filename, output='list')
+source_ep.nb_channel = 2
+epo_view = EpochViewer(source=source_ep, name='epoch')
+#epo_view.by_channel_params['ch0', 'color'] = '#AA00AA'
+#epo_view.params['xsize'] = 6.5
+win.add_view(epo_view)
+'''
 
 # Epoch encoder lets encode some dev mood along the day
 possible_labels = ['euphoric', 'nervous', 'hungry',  'triumphant']
