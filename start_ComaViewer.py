@@ -1,9 +1,10 @@
 
 import neo
-from ephyviewer import mkQApp, MainViewer, TraceViewer, get_sources_from_neo_rawio, EpochViewer
+from ephyviewer import mkQApp, MainViewer, TraceViewer, get_sources_from_neo_rawio, EpochViewer, EventList
 from ephyviewer import EpochEncoder, compose_mainviewer_from_sources, VideoViewer, CsvEpochSource
 from ephyviewer.tests.testing_tools import make_fake_video_source
 from ephyviewer import video
+from ephyviewer import InMemoryEventSource, InMemoryEpochSource
 import numpy as np
 import datetime
 import platform
@@ -43,6 +44,7 @@ app = mkQApp()
 #win = MainViewer(datetime0 = neo_seg.rec_datetime, show_label_datetime=True)
 win = MainViewer(datetime0 = datetime0, show_label_datetime=True)
 
+
 # EEG viewer
 mainviewer = compose_mainviewer_from_sources(sources, mainviewer=win) #TODO rewrite it better
 
@@ -57,15 +59,20 @@ video_source = video.MultiVideoFileSource([video_avi_file], [rescaled_video_time
 video_view = VideoViewer(source=video_source, name='video')
 win.add_view(video_view)
 
-# Epoch viewer for Florent scores #TODO ALEX
-'''
-source_ep = read_volcan_epoch(fac_filename, facdef_filename, output='list')
-source_ep.nb_channel = 2
-epo_view = EpochViewer(source=source_ep, name='epoch')
+
+# Epoch viewer for Florent scores 
+all_events, all_epochs = read_volcan_epoch(fac_filename, facdef_filename, video_tps_file, video_clock_file, eeg_trc_file, output='event_epoch') #list  neo2
+source_ev = InMemoryEventSource(all_events=all_events)
+source_ep = InMemoryEpochSource(all_epochs=all_epochs)
+epoch_view = EpochViewer(source=source_ep, name='epoch Volcan Florent')
+event_view = EventList(source=source_ev, name='event')
 #epo_view.by_channel_params['ch0', 'color'] = '#AA00AA'
 #epo_view.params['xsize'] = 6.5
-win.add_view(epo_view)
-'''
+
+win.add_view(epoch_view)
+win.add_view(event_view)
+##################
+
 
 # Epoch encoder lets encode some dev mood along the day
 possible_labels = ['euphoric', 'nervous', 'hungry',  'triumphant']

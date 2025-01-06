@@ -6,7 +6,9 @@ import ephyviewer
 import pandas as pd
 import datetime
 import matplotlib.pyplot as plt
-print('hello')
+import quantities as pq
+
+#
 
 def read_EEG_syncro_trig(eeg_trc_file):
     seg = neo.MicromedIO(filename = eeg_trc_file).read_segment()
@@ -53,9 +55,9 @@ def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
     video_times = np.fromfile(video_tps_file, dtype= np.uint32).astype(np.float64)/1000.  # need .astype(np.float64) ?
     t0_machine = video_times[0] #TODO add description
     video_times -= t0_machine
-    #print('t0_machine : ', t0_machine)
-    #print('video_times[1] ', video_times[1])
-    #print('shape video_times : ', np.shape(video_times))
+    print('t0_machine : ', t0_machine)
+    print('video_times[1] ', video_times[1])
+    print('shape video_times : ', np.shape(video_times))
     
     # Read synchro trig clock from .clock  
     trig_video_times = np.fromfile(video_clock_file, dtype = np.uint32).astype(np.float64)/1000.
@@ -180,10 +182,42 @@ def get_env_rawData(raw_file, eeg_trc_file):
    
     #return raw[:,0:2], raw_freq, t_start, channel_names, corrected_raw_idx
     return raw, raw_freq, t_start, channel_names, corrected_raw_idx
-       
-def read_volcan_epoch(fac_filename, facdef_filename, output='list'):
+
+def rescale_score_times(epoch_times, video_tps_file, video_clock_file, eeg_trc_file):
+    
+    # Read video times from .tps file
+    video_times = np.fromfile(video_tps_file, dtype= np.uint32).astype(np.float64)/1000.  # need .astype(np.float64) ?
+    t0_machine = video_times[0] #TODO add description
+    print('t0_machine : ', t0_machine)
+    print('epoch_times[0] : ', epoch_times[0])
+    #epoch_times -= t0_machine/1000.
+    
+    # Read synchro trig clock from .clock  
+    trig_video_times = np.fromfile(video_clock_file, dtype = np.uint32).astype(np.float64)/1000.
+    #print('ICI  video_clock_file data[0]: ', trig_video_times[0])
+    trig_video_times -= t0_machine  # Remove the T0 from .tps file to the .clock data ! this is the T0_machine
+  
+    # Get coefficent to project video time to EEG time space
+    trig_micromed_times = read_EEG_syncro_trig(eeg_trc_file)
+    
+    '''
+    if patient_name in ['P03', 'P07', 'P09', 'P10', 'P11bis', 'P12', 'P15', 'P16']:
+    trig_micromed_times = trig_micromed_times[:-1]
+    print "Last Micromed trig removed because not received from volcan side !"
+    '''
+    
+    a, b = get_data_to_EEG_regression_coef(trig_video_times, trig_micromed_times)
+    epoch_times = [float(x) for x in epoch_times]
+    rescaled_epoch_times = epoch_times + b
+    
+    #print('Rescaled_video_time  : ', rescaled_video_time[0])
+    #print('shape rescaled_video_time : ', np.shape(rescaled_video_time))
+    
+    return rescaled_epoch_times  
+      
+def read_volcan_epoch(fac_filename, facdef_filename, video_tps_file, video_clock_file, eeg_trc_file,  output='list'):
     """
-    : param output: "dict" or "neo2"
+    : param output: "list" or "neo2"  #TODO debug neo ?
     Attention 0=non coded
     """
     print("fac_filename : ", fac_filename)
@@ -193,6 +227,7 @@ def read_volcan_epoch(fac_filename, facdef_filename, output='list'):
     while line !='':
         epocharray = { }
         epocharray['name'], n = line.replace('\'n', '').replace('\r', '').split(' ')
+        print("epocharray['name'] : ", epocharray['name'])
         epocharray['possible_labels'] = { }
         for i in range(int(n)):
             line = fid.readline().replace('\'n', '').replace('\r', '')
@@ -219,28 +254,56 @@ def read_volcan_epoch(fac_filename, facdef_filename, output='list'):
             if k in epocharray['possible_labels'].keys() :
                 t_start = epocharray['image_times'][fronts[e]]
                 t_stop = epocharray['image_times'][fronts[e+1]]
-                epocharray['epoch_times' ].append(t_start)
-                epocharray['epoch_durations' ].append(t_stop-t_start)
-                epocharray['epoch_labels' ].append(epocharray['possible_labels'][k])
+                epocharray['epoch_times'].append(t_start)
+                epocharray['epoch_durations'].append(t_stop-t_start)
+                epocharray['epoch_labels'].append(epocharray['possible_labels'][k])
                 #epocharray['epoch_code' ].append(int(k))
+                
+    print('epocharray : ', epocharray)
+    
+    # rescale video time to EEG clock reference
+    for i, epocharray in enumerate(epocharrays):
+        epocharray['epoch_times'] = rescale_score_times(epocharray['epoch_times'], video_tps_file, video_clock_file, eeg_trc_file)
     
     if output == 'list':
         return epocharrays
-    elif output == 'neo2' and has_neo:
+    elif output == 'neo2':
         neo_eps = [ ]
         for ep in epocharrays:
-            neo_ep = neo.EpochArray(name = epocharray['name'],
-                                    times = epocharray['epoch_times' ]*pq.s,
-                                    durations = epocharray['epoch_durations' ]*pq.s,
-                                    labels = np.array(epocharray['epoch_labels' ], dtype = str),
+            neo_ep = neo.Epoch(name = ep['name'],   #EpochArray
+                                    times = ep['epoch_times' ]*pq.s,
+                                    durations = ep['epoch_durations' ]*pq.s,
+                                    labels = np.array(ep['epoch_labels' ], dtype = str),
                                     )
             neo_eps.append(neo_ep)
         return neo_eps
-  
+    elif output == 'event_epoch':
+        all_events = []
+        all_epochs = []
+        for ep in epocharrays:
+            for label in ep['possible_labels'].values():
+                print('label : ', label)
+                ev_times_label = []
+                epo_duration_label = []
+                ev_labels = []
+                for el in range (len(ep['epoch_labels'])):
+                    if ep['epoch_labels'][el] == label:
+                        ev_times_label.append(ep['epoch_times'][el])
+                        epo_duration_label.append(ep['epoch_durations'][el])
+                        ev_labels.append(label + ' num {}'.format(el))
+                ev_times = np.array(ev_times_label)
+                epo_duration = np.array(epo_duration_label)
+                ev_labels_np = np.array(ev_labels, dtype = str)
+                all_events.append({ 'time':ev_times, 'label':ev_labels_np, 'name':ep['name'] + '_' + label })
+                all_epochs.append({ 'time':ev_times, 'duration':epo_duration, 'label':ev_labels_np, 'name':ep['name'] + '_' +  label })
+        
+        return all_events, all_epochs
+
+
 def get_scores_volcan(fac_filename, facdef_filename):
     
     epocharrays = read_volcan_epoch(fac_filename, facdef_filename, output='list')
-    print(epocharrays)
+    print('epocharrays : ', epocharrays)
     
 def get_scores_volcan_h5(h5_scoreVolcan):
     
@@ -350,20 +413,36 @@ def test_get_scores_volcan_h5(patient_name):
     print('date_start : ', date_start)
     print('date_start : ', date_start)
     
+def test_read_volcan_epoch(patient_name):
+    data_raw_path = '/home/tkz/Projets/data/data_Florent_Hugo_2024/raw/'
+    fac_filename = "{}/{}/{}_V=1.fac".format(data_raw_path, patient_name, patient_name)
+    facdef_filename = "{}/{}/{}_V=1.facdef".format(data_raw_path, patient_name, patient_name)
+    
+    video_tps_file = "{}/{}/{}_V=1.tps".format(data_raw_path, patient_name, patient_name)
+    video_clock_file =  "{}/{}/{}.clock".format(data_raw_path, patient_name, patient_name)
+    eeg_trc_file = "{}/{}/{}_EEG_24h.TRC".format(data_raw_path, patient_name, patient_name)
+    
+    #epocharrays = read_volcan_epoch(fac_filename, facdef_filename, output='neo2') # list neo2
+    #print('epocharrays :', epocharrays)
+    
+    all_events, all_epochs = read_volcan_epoch(fac_filename, facdef_filename, video_tps_file, video_clock_file, eeg_trc_file, output='event_epoch')
+    print('all_events :', all_events)
+    print('all_epochs :', all_epochs)
+ 
     
 if __name__ == "__main__":
 
     patient_name = 'P03'
     
-    #test_rescale_video_times(patient_name)
+    test_rescale_video_times(patient_name)
     #test_get_env_rawData(patient_name)
     
-    show_starts_timmings(patient_name)
+    #show_starts_timmings(patient_name)
    
     #test_get_scores_volcan(patient_name)
     
-    
-    
+    #test_read_volcan_epoch(patient_name)
+   
     #From data node (trying no using it - but to compare)
     #test_get_scores_volcan_h5(patient_name)
     #test_get_env_H5Data(patient_name)
