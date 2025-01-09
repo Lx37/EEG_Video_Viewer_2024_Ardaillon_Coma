@@ -8,7 +8,6 @@ from ephyviewer import InMemoryEventSource, InMemoryEpochSource
 import numpy as np
 import datetime
 import platform
-#import pandas as pd
 
 from tools import rescale_video_times, get_env_rawData, read_volcan_epoch #get_env_H5Data
 
@@ -57,20 +56,20 @@ mainviewer.add_view(sono_view)
 rescaled_video_time = rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file)
 video_source = video.MultiVideoFileSource([video_avi_file], [rescaled_video_time])# [rescaled_video_time]) 
 video_view = VideoViewer(source=video_source, name='video')
-win.add_view(video_view)
+win.add_view(video_view, location='bottom',  orientation='horizontal')
 
 
 # Epoch viewer for Florent scores 
 all_events, all_epochs = read_volcan_epoch(fac_filename, facdef_filename, video_tps_file, video_clock_file, eeg_trc_file, output='event_epoch') #list  neo2
 source_ev = InMemoryEventSource(all_events=all_events)
 source_ep = InMemoryEpochSource(all_epochs=all_epochs)
-epoch_view = EpochViewer(source=source_ep, name='epoch Volcan Florent')
+epoch_view = EpochViewer(source=source_ep, name='epoch volcan Florent')
 event_view = EventList(source=source_ev, name='event')
 #epo_view.by_channel_params['ch0', 'color'] = '#AA00AA'
 #epo_view.params['xsize'] = 6.5
 
 win.add_view(epoch_view)
-win.add_view(event_view)
+win.add_view(event_view, location='bottom', orientation='horizontal', tabify_with='video')
 ##################
 
 

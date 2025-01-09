@@ -11,6 +11,15 @@ import quantities as pq
 #
 
 def read_EEG_syncro_trig(eeg_trc_file):
+    """
+    Reads EEG synchronization triggers from a .TRC file.
+
+    Parameters:
+    eeg_trc_file (str): Path to the .TRC file.
+
+    Returns:
+    np.ndarray: Array of trigger times in seconds.
+    """
     seg = neo.MicromedIO(filename = eeg_trc_file).read_segment()
     ev_synchro = seg.events[1]
     ghost_trigs = []
@@ -27,18 +36,39 @@ def read_EEG_syncro_trig(eeg_trc_file):
     if 'P17' in eeg_trc_file:
         ghost_trigs.append(668)  # manualy found..
     trig_micromed_times = np.delete(ev_synchro.times.rescale('s').magnitude, ghost_trigs)
+    
     return trig_micromed_times
 
 def get_data_to_EEG_regression_coef(trig_other_times, trig_micromed_times):
-    
+    """
+    Calculates linear regression coefficients to project other times to EEG time space.
+
+    Parameters:
+    trig_other_times (np.ndarray): Array of trigger times from another source.
+    trig_micromed_times (np.ndarray): Array of trigger times from the EEG.
+
+    Returns:
+    tuple: Coefficients (a, b) for the linear regression.
+    """
     print('trigs volcan : ', np.shape(trig_other_times)[0], ' trig micromed : ', np.shape(trig_micromed_times)[0]) 
     assert np.shape(trig_other_times)[0] == np.shape(trig_micromed_times)[0], 'Not the same number of syncro trigs'
     a,b,r,tt,stderr = sc.stats.linregress(trig_other_times, trig_micromed_times)
     print('Linear regression coefficients for time projection in EEG space : a = ', a, ' b = ', b)
+    
     return a, b
 
 def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
-    
+    """
+    Rescales video times to EEG time space.
+
+    Parameters:
+    video_tps_file (str): Path to the .tps file containing video times.
+    video_clock_file (str): Path to the .clock file containing video trigger times.
+    eeg_trc_file (str): Path to the .TRC file containing EEG data.
+
+    Returns:
+    np.ndarray: Rescaled video times.
+    """
     print('******* Load Video data')
     
     # Read video times from .tps file
@@ -60,7 +90,15 @@ def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
     return rescaled_video_time  
     
 def get_env_H5Data(env_h5_file):
-    
+    """
+    Reads environmental data from an HDF5 file.
+
+    Parameters:
+    env_h5_file (str): Path to the HDF5 file.
+
+    Returns:
+    tuple: Signals, sample rate, start time, and channel names.
+    """
     #list keys
     #with pd.HDFStore(data_path) as hdf:
     #    print(hdf.keys())
@@ -88,7 +126,15 @@ def get_env_H5Data(env_h5_file):
     return sigs, sample_rate, t_start, channel_names
         
 def read_header(header_filename):
-    #~ print header_filename
+    """
+    Reads the header information from a file.
+
+    Parameters:
+    header_filename (str): Path to the header file.
+
+    Returns:
+    dict: Dictionary containing header information.
+    """
     d = { }
     for line in open(header_filename):
         k,v = line.replace('\n', '').replace('\r', '').split(':')
@@ -107,6 +153,16 @@ def read_header(header_filename):
     return d    
 
 def read_volcan_signal(raw_filename, output = 'neo2'):
+    """
+    Reads Volcan signal data from a raw file.
+
+    Parameters:
+    raw_filename (str): Path to the raw file.
+    output (str): Output format, either 'numpy' or 'neo2'.
+
+    Returns:
+    tuple or list: Header and signals if output is 'numpy', otherwise list of AnalogSignal objects.
+    """
     header_filename = os.path.splitext(raw_filename)[0]+'.header'
     d = read_header(header_filename)
     sigs = np.fromfile(raw_filename, dtype = d['dtype'],).reshape(-1, d['nbvoies'])
@@ -118,10 +174,20 @@ def read_volcan_signal(raw_filename, output = 'neo2'):
         for i, name in enumerate(d['channelnames']):
             anasigs.append(neo.AnalogSignal(sigs[:,i]*pq.V, t_start = 0.*pq.s,
                         sampling_rate = d['frequence']*pq.Hz, name = name))
+        
         return anasigs
 
 def get_env_rawData(raw_file, eeg_trc_file):
-    
+    """
+    Reads environmental raw data and synchronizes it with EEG data.
+
+    Parameters:
+    raw_file (str): Path to the raw file.
+    eeg_trc_file (str): Path to the .TRC file containing EEG data.
+
+    Returns:
+    tuple: Raw data, raw frequency, start time, channel names, and corrected raw indices.
+    """
     print('******* Load raw data')
     
     header, raw = read_volcan_signal(raw_file,output='numpy')
@@ -162,10 +228,21 @@ def get_env_rawData(raw_file, eeg_trc_file):
     return raw, raw_freq, t_start, channel_names, corrected_raw_idx
 
 def rescale_score_times(epoch_times, video_tps_file, video_clock_file, eeg_trc_file):
+    """
+    Rescales score times to EEG time space.
+    Here we don't remove t0_machine as the score are linked to video frames
+    just need to project it to EEG timing space
     
-    # Here we don't remove t0_machine as the score are linked to video frames
-    # just need to project it to EEG timing space
-    
+
+    Parameters:
+    epoch_times (list): List of epoch times.
+    video_tps_file (str): Path to the .tps file containing video times.
+    video_clock_file (str): Path to the .clock file containing video trigger times.
+    eeg_trc_file (str): Path to the .TRC file containing EEG data.
+
+    Returns:
+    list: Rescaled epoch times.
+    """
     # Read video times from .tps file
     video_times = np.fromfile(video_tps_file, dtype= np.uint32).astype(np.float64)/1000.  # need .astype(np.float64) ?
     t0_machine = video_times[0]
@@ -185,8 +262,18 @@ def rescale_score_times(epoch_times, video_tps_file, video_clock_file, eeg_trc_f
       
 def read_volcan_epoch(fac_filename, facdef_filename, video_tps_file, video_clock_file, eeg_trc_file,  output='list'):
     """
-    : param output: "list" or "neo2"  #TODO debug neo ?
-    Attention 0=non coded
+    Reads Volcan epoch data and rescales it to EEG time space.
+
+    Parameters:
+    fac_filename (str): Path to the .fac file containing epoch data.
+    facdef_filename (str): Path to the .facdef file containing epoch definitions.
+    video_tps_file (str): Path to the .tps file containing video times.
+    video_clock_file (str): Path to the .clock file containing video trigger times.
+    eeg_trc_file (str): Path to the .TRC file containing EEG data.
+    output (str): Output format, either 'list', 'neo2', or 'event_epoch'.
+
+    Returns:
+    list or tuple: List of epoch arrays if output is 'list', otherwise list of Neo Epoch objects or tuple of events and epochs.
     """
     print('******* Load volcan score data')
     
@@ -267,7 +354,16 @@ def read_volcan_epoch(fac_filename, facdef_filename, video_tps_file, video_clock
 
 
 def get_scores_volcan(fac_filename, facdef_filename):
-    
+    """
+    Reads Volcan scores from .fac and .facdef files.
+
+    Parameters:
+    fac_filename (str): Path to the .fac file containing scores.
+    facdef_filename (str): Path to the .facdef file containing score definitions.
+
+    Returns:
+    list: List of epoch arrays.
+    """
     epocharrays = read_volcan_epoch(fac_filename, facdef_filename, output='list')
     #print('epocharrays : ', epocharrays)
 
