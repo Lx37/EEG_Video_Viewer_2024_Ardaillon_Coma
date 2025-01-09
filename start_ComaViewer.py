@@ -36,7 +36,7 @@ raw_file =  "{}/{}/{}.raw".format(data_raw_path, patient_name, patient_name)
 # Load EEG signals
 neorawio = neo.MicromedIO(filename = eeg_trc_file) 
 sources = get_sources_from_neo_rawio(neorawio)
-print('sources from neo_rawio : ', sources)
+#print('sources from neo_rawio : ', sources)
 datetime0 = neorawio.read_segment().rec_datetime
 
 # General app window

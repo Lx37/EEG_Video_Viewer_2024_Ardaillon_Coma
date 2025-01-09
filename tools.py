@@ -12,16 +12,9 @@ import quantities as pq
 
 def read_EEG_syncro_trig(eeg_trc_file):
     seg = neo.MicromedIO(filename = eeg_trc_file).read_segment()
-    #print('seg : ', seg)
-    #print('seg.events : ', seg.events)
-    #for ev in seg.events:
-    #    #print('   ', ev.name, ev.times, ev.labels)
-    #    print('ev.labels ###################"   ', ev.labels)
-    #ev_synchro = seg.eventarrays[1]
     ev_synchro = seg.events[1]
     ghost_trigs = []
     for ii, label in enumerate(ev_synchro.labels):
-        #print 'trig ', ii, ' label ', label
         if label.find('Trigger') == -1:
             ghost_trigs.append(ii)
             print('found a ghost trigg at pos ' + str(ii) + ' label is : ' + label + ' !')
@@ -41,10 +34,7 @@ def get_data_to_EEG_regression_coef(trig_other_times, trig_micromed_times):
     print('trigs volcan : ', np.shape(trig_other_times)[0], ' trig micromed : ', np.shape(trig_micromed_times)[0]) 
     assert np.shape(trig_other_times)[0] == np.shape(trig_micromed_times)[0], 'Not the same number of syncro trigs'
     a,b,r,tt,stderr = sc.stats.linregress(trig_other_times, trig_micromed_times)
-    # print trig_other_times[0]
-    # print trig_micromed_times[0]
-    print("a : ", a)
-    print("b : ", b)
+    print('Linear regression coefficients for time projection in EEG space : a = ', a, ' b = ', b)
     return a, b
 
 def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
@@ -55,9 +45,6 @@ def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
     video_times = np.fromfile(video_tps_file, dtype= np.uint32).astype(np.float64)/1000.  # need .astype(np.float64) ?
     t0_machine = video_times[0] #TODO add description
     video_times -= t0_machine
-    print('t0_machine : ', t0_machine)
-    print('video_times[1] ', video_times[1])
-    print('shape video_times : ', np.shape(video_times))
     
     # Read synchro trig clock from .clock  
     trig_video_times = np.fromfile(video_clock_file, dtype = np.uint32).astype(np.float64)/1000.
@@ -67,17 +54,8 @@ def rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file):
     # Get coefficent to project video time to EEG time space
     trig_micromed_times = read_EEG_syncro_trig(eeg_trc_file)
     
-    '''
-    if patient_name in ['P03', 'P07', 'P09', 'P10', 'P11bis', 'P12', 'P15', 'P16']:
-    trig_micromed_times = trig_micromed_times[:-1]
-    print "Last Micromed trig removed because not received from volcan side !"
-    '''
-    
     a, b = get_data_to_EEG_regression_coef(trig_video_times, trig_micromed_times)
     rescaled_video_time = video_times* a + b
-    
-    #print('Rescaled_video_time  : ', rescaled_video_time[0])
-    #print('shape rescaled_video_time : ', np.shape(rescaled_video_time))
     
     return rescaled_video_time  
     
@@ -185,33 +163,23 @@ def get_env_rawData(raw_file, eeg_trc_file):
 
 def rescale_score_times(epoch_times, video_tps_file, video_clock_file, eeg_trc_file):
     
+    # Here we don't remove t0_machine as the score are linked to video frames
+    # just need to project it to EEG timing space
+    
     # Read video times from .tps file
     video_times = np.fromfile(video_tps_file, dtype= np.uint32).astype(np.float64)/1000.  # need .astype(np.float64) ?
-    t0_machine = video_times[0] #TODO add description
-    print('t0_machine : ', t0_machine)
-    print('epoch_times[0] : ', epoch_times[0])
-    #epoch_times -= t0_machine/1000.
+    t0_machine = video_times[0]
+    #t0_machine is not removed as the score are linked to video frames
     
     # Read synchro trig clock from .clock  
     trig_video_times = np.fromfile(video_clock_file, dtype = np.uint32).astype(np.float64)/1000.
-    #print('ICI  video_clock_file data[0]: ', trig_video_times[0])
     trig_video_times -= t0_machine  # Remove the T0 from .tps file to the .clock data ! this is the T0_machine
   
     # Get coefficent to project video time to EEG time space
     trig_micromed_times = read_EEG_syncro_trig(eeg_trc_file)
-    
-    '''
-    if patient_name in ['P03', 'P07', 'P09', 'P10', 'P11bis', 'P12', 'P15', 'P16']:
-    trig_micromed_times = trig_micromed_times[:-1]
-    print "Last Micromed trig removed because not received from volcan side !"
-    '''
-    
+
     a, b = get_data_to_EEG_regression_coef(trig_video_times, trig_micromed_times)
-    epoch_times = [float(x) for x in epoch_times]
-    rescaled_epoch_times = epoch_times + b
-    
-    #print('Rescaled_video_time  : ', rescaled_video_time[0])
-    #print('shape rescaled_video_time : ', np.shape(rescaled_video_time))
+    rescaled_epoch_times = [a * float(x) + b for x in epoch_times]
     
     return rescaled_epoch_times  
       
@@ -220,14 +188,14 @@ def read_volcan_epoch(fac_filename, facdef_filename, video_tps_file, video_clock
     : param output: "list" or "neo2"  #TODO debug neo ?
     Attention 0=non coded
     """
-    print("fac_filename : ", fac_filename)
+    print('******* Load volcan score data')
+    
     fid = open(facdef_filename,  encoding= "ISO-8859-1")
     line = fid.readline()
     epocharrays = [ ]
     while line !='':
         epocharray = { }
         epocharray['name'], n = line.replace('\'n', '').replace('\r', '').split(' ')
-        print("epocharray['name'] : ", epocharray['name'])
         epocharray['possible_labels'] = { }
         for i in range(int(n)):
             line = fid.readline().replace('\'n', '').replace('\r', '')
@@ -240,7 +208,7 @@ def read_volcan_epoch(fac_filename, facdef_filename, video_tps_file, video_clock
     
     for i, epocharray in enumerate(epocharrays):
         epocharray['image_times'] = images[0,:]
-        epocharray['image_codes'] = images[1,:]
+        epocharray['image_codes'] = images[i+1,:]  # was 1 -> error, images shape is (3, 88970) for several scores
         
         # regroup image_labels in epoch with times+duration 
         fronts, = np.where( np.diff(epocharray['image_codes']) != 0 )
@@ -259,11 +227,10 @@ def read_volcan_epoch(fac_filename, facdef_filename, video_tps_file, video_clock
                 epocharray['epoch_labels'].append(epocharray['possible_labels'][k])
                 #epocharray['epoch_code' ].append(int(k))
                 
-    print('epocharray : ', epocharray)
-    
+   
     # rescale video time to EEG clock reference
-    for i, epocharray in enumerate(epocharrays):
-        epocharray['epoch_times'] = rescale_score_times(epocharray['epoch_times'], video_tps_file, video_clock_file, eeg_trc_file)
+    for i, epochar in enumerate(epocharrays):
+        epocharrays[i]['epoch_times'] = rescale_score_times(epocharrays[i]['epoch_times'], video_tps_file, video_clock_file, eeg_trc_file)
     
     if output == 'list':
         return epocharrays
@@ -282,7 +249,6 @@ def read_volcan_epoch(fac_filename, facdef_filename, video_tps_file, video_clock
         all_epochs = []
         for ep in epocharrays:
             for label in ep['possible_labels'].values():
-                print('label : ', label)
                 ev_times_label = []
                 epo_duration_label = []
                 ev_labels = []
@@ -303,8 +269,9 @@ def read_volcan_epoch(fac_filename, facdef_filename, video_tps_file, video_clock
 def get_scores_volcan(fac_filename, facdef_filename):
     
     epocharrays = read_volcan_epoch(fac_filename, facdef_filename, output='list')
-    print('epocharrays : ', epocharrays)
-    
+    #print('epocharrays : ', epocharrays)
+
+'''    
 def get_scores_volcan_h5(h5_scoreVolcan):
     
     with pd.HDFStore(h5_scoreVolcan) as hdf:
@@ -336,7 +303,7 @@ def get_scores_volcan_h5(h5_scoreVolcan):
     plt.show()
     
     return data_yeux_np, data_motricite_np, sample_rate, date_start
-
+'''
 
     
 # Test methods
@@ -350,6 +317,7 @@ def test_rescale_video_times(patient_name):
     
     rescaled_video_time = rescale_video_times(video_tps_file, video_clock_file, eeg_trc_file)
 
+'''
 def test_get_env_H5Data(patient_name):
     
     data_folder_path = '/home/tkz/Projets/data/data_Florent_Hugo_2024/data_node'
@@ -359,7 +327,8 @@ def test_get_env_H5Data(patient_name):
     
     print('sample_rate : ', sample_rate)
     print('t_start : , ', t_start)
-   
+''' 
+
 def test_get_env_rawData(patient_name):
     
     data_raw_path = '/home/tkz/Projets/data/data_Florent_Hugo_2024/raw/'
